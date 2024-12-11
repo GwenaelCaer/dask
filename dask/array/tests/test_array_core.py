@@ -3253,16 +3253,16 @@ def test_vindex_errors():
         d.vindex[[0], [0], da.array([0])]
 
 
-# def test_vindex_merge():
-#     from dask.array.core import _vindex_merge
+def test_vindex_merge():
+    from dask.array.core import _vindex_merge
 
-#     locations = [1], [2, 0]
-#     values = [np.array([[1, 2, 3]]), np.array([[10, 20, 30], [40, 50, 60]])]
+    locations = [1], [2, 0]
+    values = [np.array([[1, 2, 3]]), np.array([[10, 20, 30], [40, 50, 60]])]
 
-#     assert (
-#         _vindex_merge(locations, values)
-#         == np.array([[40, 50, 60], [1, 2, 3], [10, 20, 30]])
-#     ).all()
+    assert (
+        _vindex_merge(locations, values)
+        == np.array([[40, 50, 60], [1, 2, 3], [10, 20, 30]])
+    ).all()
 
 
 def test_vindex_identity():
