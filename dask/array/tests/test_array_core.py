@@ -3152,8 +3152,8 @@ def test_point_slicing_with_full_slice():
         result = d.vindex[tuple(slc)]
 
         # Rotate the expected result accordingly
-        # axis = _get_axis(ind)
-        axis = _get_axis([a for a, i in enumerate(ind) if i is not None])
+        axis = _get_axis(ind)
+        # axis = _get_axis([a for a, i in enumerate(ind) if i is not None])
 
         expected = _vindex_transpose(x[tuple(slc)], axis)
 

@@ -5581,62 +5581,6 @@ def keyname(name, i, okey):
     return (name, i) + tuple(k for k in okey if k is not None)
 
 
-# def _vindex(x, *indexes):
-#     """Point wise indexing with broadcasting.
-
-#     >>> x = np.arange(56).reshape((7, 8))
-#     >>> x
-#     array([[ 0,  1,  2,  3,  4,  5,  6,  7],
-#            [ 8,  9, 10, 11, 12, 13, 14, 15],
-#            [16, 17, 18, 19, 20, 21, 22, 23],
-#            [24, 25, 26, 27, 28, 29, 30, 31],
-#            [32, 33, 34, 35, 36, 37, 38, 39],
-#            [40, 41, 42, 43, 44, 45, 46, 47],
-#            [48, 49, 50, 51, 52, 53, 54, 55]])
-
-#     >>> d = from_array(x, chunks=(3, 4))
-#     >>> result = _vindex(d, [0, 1, 6, 0], [0, 1, 0, 7])
-#     >>> result.compute()
-#     array([ 0,  9, 48,  7])
-#     """
-#     indexes = replace_ellipsis(x.ndim, indexes)
-
-#     nonfancy_indexes = []
-#     reduced_indexes = []
-#     for ind in indexes:
-#         if isinstance(ind, Number):
-#             nonfancy_indexes.append(ind)
-#         elif isinstance(ind, slice):
-#             nonfancy_indexes.append(ind)
-#             reduced_indexes.append(slice(None))
-#         else:
-#             nonfancy_indexes.append(slice(None))
-#             reduced_indexes.append(ind)
-
-#     nonfancy_indexes = tuple(nonfancy_indexes)
-#     reduced_indexes = tuple(reduced_indexes)
-
-#     x = x[nonfancy_indexes]
-
-#     array_indexes = {}
-#     for i, (ind, size) in enumerate(zip(reduced_indexes, x.shape)):
-#         if not isinstance(ind, slice):
-#             ind = np.array(ind, copy=True)
-#             if ind.dtype.kind == "b":
-#                 raise IndexError("vindex does not support indexing with boolean arrays")
-#             if ((ind >= size) | (ind < -size)).any():
-#                 raise IndexError(
-#                     "vindex key has entries out of bounds for "
-#                     "indexing along axis %s of size %s: %r" % (i, size, ind)
-#                 )
-#             ind %= size
-#             array_indexes[i] = ind
-
-#     if array_indexes:
-#         x = _vindex_array(x, array_indexes)
-
-#     return x
-
 def _vindex(x, *indexes):
     """Point wise indexing with broadcasting.
 
@@ -5677,7 +5621,7 @@ def _vindex(x, *indexes):
     array_indexes = {}
     for i, (ind, size) in enumerate(zip(reduced_indexes, x.shape)):
         if not isinstance(ind, slice):
-            ind = np.array(ind, copy=False)
+            ind = np.array(ind, copy=True)
             if ind.dtype.kind == "b":
                 raise IndexError("vindex does not support indexing with boolean arrays")
             if ((ind >= size) | (ind < -size)).any():
@@ -5685,8 +5629,7 @@ def _vindex(x, *indexes):
                     "vindex key has entries out of bounds for "
                     "indexing along axis %s of size %s: %r" % (i, size, ind)
                 )
-            if (ind < 0).any():
-                ind %= size
+            ind %= size
             array_indexes[i] = ind
 
     if array_indexes:
@@ -5694,126 +5637,6 @@ def _vindex(x, *indexes):
 
     return x
 
-
-# def _vindex_array(x, dict_indexes):
-#     """Point wise indexing with only NumPy Arrays."""
-
-#     try:
-#         broadcast_indexes = np.broadcast_arrays(*dict_indexes.values())
-#     except ValueError as e:
-#         # note: error message exactly matches numpy
-#         shapes_str = " ".join(str(a.shape) for a in dict_indexes.values())
-#         raise IndexError(
-#             "shape mismatch: indexing arrays could not be "
-#             "broadcast together with shapes " + shapes_str
-#         ) from e
-#     broadcast_shape = broadcast_indexes[0].shape
-
-#     lookup = dict(zip(dict_indexes, broadcast_indexes))
-#     flat_indexes = [lookup[i].ravel() if i in lookup else None for i in range(x.ndim)]
-#     flat_indexes.extend([None] * (x.ndim - len(flat_indexes)))
-
-#     token = tokenize(x, flat_indexes)
-
-#     flat_indexes = [
-#         list(index) if index is not None else index for index in flat_indexes
-#     ]
-#     bounds = [list(accumulate(add, (0,) + c)) for c in x.chunks]
-#     bounds2 = [b for i, b in zip(flat_indexes, bounds) if i is not None]
-#     axis = _get_axis(flat_indexes)
-#     out_name = "vindex-merge-" + token
-
-#     max_chunk_point_dimensions = reduce(
-#         mul, map(max, [c for i, c in zip(flat_indexes, x.chunks) if i is not None])
-#     )
-
-#     points = list()
-#     for i, idx in enumerate(zip(*[i for i in flat_indexes if i is not None])):
-#         block_idx = [bisect(b, ind) - 1 for b, ind in zip(bounds2, idx)]
-#         inblock_idx = [
-#             ind - bounds2[k][j] for k, (ind, j) in enumerate(zip(idx, block_idx))
-#         ]
-#         points.append(
-#             (
-#                 divmod(i, max_chunk_point_dimensions)[1],
-#                 tuple(block_idx),
-#                 tuple(inblock_idx),
-#                 (i // max_chunk_point_dimensions,) + tuple(block_idx),
-#             )
-#         )
-
-#     chunks = [c for i, c in zip(flat_indexes, x.chunks) if i is None]
-#     n_chunks, remainder = divmod(len(points), max_chunk_point_dimensions)
-#     chunks.insert(
-#         0,
-#         (
-#             (max_chunk_point_dimensions,) * n_chunks
-#             + ((remainder,) if remainder > 0 else ())
-#             if points
-#             else (0,)
-#         ),
-#     )
-#     chunks = tuple(chunks)
-
-#     if points:
-#         per_block = groupby(3, points)
-#         per_block = {k: v for k, v in per_block.items() if v}
-
-#         other_blocks = list(
-#             product(
-#                 *[
-#                     list(range(len(c))) if i is None else [None]
-#                     for i, c in zip(flat_indexes, x.chunks)
-#                 ]
-#             )
-#         )
-
-#         full_slices = [slice(None, None) if i is None else None for i in flat_indexes]
-
-#         name = "vindex-slice-" + token
-#         vindex_merge_name = "vindex-merge-" + token
-#         dsk = {}
-#         for okey in other_blocks:
-#             merge_inputs = defaultdict(list)
-#             merge_indexer = defaultdict(list)
-#             for i, key in enumerate(per_block):
-#                 dsk[keyname(name, i, okey)] = (
-#                     _vindex_transpose,
-#                     (
-#                         _vindex_slice,
-#                         (x.name,) + interleave_none(okey, tuple(list(key)[1:])),
-#                         interleave_none(
-#                             full_slices, list(zip(*pluck(2, per_block[key])))
-#                         ),
-#                     ),
-#                     axis,
-#                 )
-#                 merge_inputs[key[0]].append(keyname(name, i, okey))
-#                 merge_indexer[key[0]].append(list(pluck(0, per_block[key])))
-#             for i in sorted(merge_inputs.keys()):
-#                 dsk[keyname(vindex_merge_name, i, okey)] = (
-#                     _vindex_merge,
-#                     merge_indexer[i],
-#                     merge_inputs[i],
-#                 )
-
-#         result_1d = Array(
-#             HighLevelGraph.from_collections(out_name, dsk, dependencies=[x]),
-#             out_name,
-#             chunks,
-#             x.dtype,
-#             meta=x._meta,
-#         )
-#         return result_1d.reshape(broadcast_shape + result_1d.shape[1:])
-
-#     # output has a zero dimension, just create a new zero-shape array with the
-#     # same dtype
-#     from dask.array.wrap import empty
-
-#     result_1d = empty(
-#         tuple(map(sum, chunks)), chunks=chunks, dtype=x.dtype, name=out_name
-#     )
-#     return result_1d.reshape(broadcast_shape + result_1d.shape[1:])
 
 def _vindex_array(x, dict_indexes):
     """Point wise indexing with only NumPy Arrays."""
@@ -5830,262 +5653,136 @@ def _vindex_array(x, dict_indexes):
     broadcast_shape = broadcast_indexes[0].shape
 
     lookup = dict(zip(dict_indexes, broadcast_indexes))
+    flat_indexes = [lookup[i].ravel() if i in lookup else None for i in range(x.ndim)]
+    flat_indexes.extend([None] * (x.ndim - len(flat_indexes)))
 
-    # flat_indexes = [lookup[i].ravel() if i in lookup else None for i in range(x.ndim)]
-    # flat_indexes.extend([None] * (x.ndim - len(flat_indexes)))
+    token = tokenize(x, flat_indexes)
 
-    indexed_axes = [i for i in range(x.ndim) if i in lookup]
-    index_arrs = [lookup[i].ravel() for i in indexed_axes]
-
-    bounds = [
-        list(accumulate(add, (0,) + c))
-        for i, c in enumerate(x.chunks)
-        if i in indexed_axes
+    flat_indexes = [
+        list(index) if index is not None else index for index in flat_indexes
     ]
-
-    # token = tokenize(x, flat_indexes)
-
-    # flat_indexes = [
-    #     list(index) if index is not None else index for index in flat_indexes
-    # ]
-    # bounds = [list(accumulate(add, (0,) + c)) for c in x.chunks]
-    # bounds2 = [b for i, b in zip(flat_indexes, bounds) if i is not None]
-    # axis = _get_axis(flat_indexes)
-
-    axis = _get_axis(indexed_axes)
-    token = tokenize(x, index_arrs)
+    bounds = [list(accumulate(add, (0,) + c)) for c in x.chunks]
+    bounds2 = [b for i, b in zip(flat_indexes, bounds) if i is not None]
+    axis = _get_axis(flat_indexes)
     out_name = "vindex-merge-" + token
 
-    # max_chunk_point_dimensions = reduce(
-    #     mul, map(max, [c for i, c in zip(flat_indexes, x.chunks) if i is not None])
-    # )
-
-    # points = list()
-    # for i, idx in enumerate(zip(*[i for i in flat_indexes if i is not None])):
-    #     block_idx = [bisect(b, ind) - 1 for b, ind in zip(bounds2, idx)]
-    #     inblock_idx = [
-    #         ind - bounds2[k][j] for k, (ind, j) in enumerate(zip(idx, block_idx))
-    #     ]
-    #     points.append(
-    #         (
-    #             divmod(i, max_chunk_point_dimensions)[1],
-    #             tuple(block_idx),
-    #             tuple(inblock_idx),
-    #             (i // max_chunk_point_dimensions,) + tuple(block_idx),
-    #         )
-    #     )
-
-    # chunks = [c for i, c in zip(flat_indexes, x.chunks) if i is None]
-    # n_chunks, remainder = divmod(len(points), max_chunk_point_dimensions)
-    # chunks.insert(
-    #     0,
-    #     (
-    #         (max_chunk_point_dimensions,) * n_chunks
-    #         + ((remainder,) if remainder > 0 else ())
-    #         if points
-    #         else (0,)
-    #     ),
-    # )
-    # chunks = tuple(chunks)
-
-    # if points:
-    #     per_block = groupby(3, points)
-    #     per_block = {k: v for k, v in per_block.items() if v}
-
-    #     other_blocks = list(
-    #         product(
-    #             *[
-    #                 list(range(len(c))) if i is None else [None]
-    #                 for i, c in zip(flat_indexes, x.chunks)
-    #             ]
-    #         )
-    #     )
-
-    # identify which blocks are being indexed
-    block_dims = tuple(d for i, d in enumerate(x.numblocks) if i in indexed_axes)
-    block_idxs = []
-    for block_idx in np.ndindex(*block_dims):
-        in_block = _check_block_bounds(index_arrs, _get_block_bounds(block_idx, bounds))
-        if in_block.any():
-            block_idxs.append(block_idx)
-
-
-        # full_slices = [slice(None, None) if i is None else None for i in flat_indexes]
-
-        # name = "vindex-slice-" + token
-        # vindex_merge_name = "vindex-merge-" + token
-        # dsk = {}
-        # for okey in other_blocks:
-        #     merge_inputs = defaultdict(list)
-        #     merge_indexer = defaultdict(list)
-        #     for i, key in enumerate(per_block):
-        #         dsk[keyname(name, i, okey)] = (
-        #             _vindex_transpose,
-        #             (
-        #                 _vindex_slice,
-        #                 (x.name,) + interleave_none(okey, tuple(list(key)[1:])),
-        #                 interleave_none(
-        #                     full_slices, list(zip(*pluck(2, per_block[key])))
-        #                 ),
-        #             ),
-        #             axis,
-        #         )
-        #         merge_inputs[key[0]].append(keyname(name, i, okey))
-        #         merge_indexer[key[0]].append(list(pluck(0, per_block[key])))
-        #     for i in sorted(merge_inputs.keys()):
-        #         dsk[keyname(vindex_merge_name, i, okey)] = (
-        #             _vindex_merge,
-        #             merge_indexer[i],
-        #             merge_inputs[i],
-        #         )
-
-    chunks = (index_arrs[0].shape,) + tuple(
-        c for i, c in enumerate(x.chunks) if i not in indexed_axes
+    max_chunk_point_dimensions = reduce(
+        mul, map(max, [c for i, c in zip(flat_indexes, x.chunks) if i is not None])
     )
 
-        # result_1d = Array(
-        #     HighLevelGraph.from_collections(out_name, dsk, dependencies=[x]),
-        #     out_name,
-        #     chunks,
-        #     x.dtype,
-        #     meta=x._meta,
-        # )
+    points = list()
+    for i, idx in enumerate(zip(*[i for i in flat_indexes if i is not None])):
+        block_idx = [bisect(b, ind) - 1 for b, ind in zip(bounds2, idx)]
+        inblock_idx = [
+            ind - bounds2[k][j] for k, (ind, j) in enumerate(zip(idx, block_idx))
+        ]
+        points.append(
+            (
+                divmod(i, max_chunk_point_dimensions)[1],
+                tuple(block_idx),
+                tuple(inblock_idx),
+                (i // max_chunk_point_dimensions,) + tuple(block_idx),
+            )
+        )
 
-    if index_arrs[0].size == 0:
-        # output has a zero dimension, just create a new zero-shape array
-        # with the same dtype
-        from dask.array.wrap import empty
+    chunks = [c for i, c in zip(flat_indexes, x.chunks) if i is None]
+    n_chunks, remainder = divmod(len(points), max_chunk_point_dimensions)
+    chunks.insert(
+        0,
+        (
+            (max_chunk_point_dimensions,) * n_chunks
+            + ((remainder,) if remainder > 0 else ())
+            if points
+            else (0,)
+        ),
+    )
+    chunks = tuple(chunks)
 
-        result_1d = empty(
-            tuple(map(sum, chunks)), chunks=chunks, dtype=x.dtype, name=out_name
+    if points:
+        per_block = groupby(3, points)
+        per_block = {k: v for k, v in per_block.items() if v}
+
+        other_blocks = list(
+            product(
+                *[
+                    list(range(len(c))) if i is None else [None]
+                    for i, c in zip(flat_indexes, x.chunks)
+                ]
+            )
+        )
+
+        full_slices = [slice(None, None) if i is None else None for i in flat_indexes]
+
+        name = "vindex-slice-" + token
+        vindex_merge_name = "vindex-merge-" + token
+        dsk = {}
+        for okey in other_blocks:
+            merge_inputs = defaultdict(list)
+            merge_indexer = defaultdict(list)
+            for i, key in enumerate(per_block):
+                dsk[keyname(name, i, okey)] = (
+                    _vindex_transpose,
+                    (
+                        _vindex_slice,
+                        (x.name,) + interleave_none(okey, tuple(list(key)[1:])),
+                        interleave_none(
+                            full_slices, list(zip(*pluck(2, per_block[key])))
+                        ),
+                    ),
+                    axis,
+                )
+                merge_inputs[key[0]].append(keyname(name, i, okey))
+                merge_indexer[key[0]].append(list(pluck(0, per_block[key])))
+            for i in sorted(merge_inputs.keys()):
+                dsk[keyname(vindex_merge_name, i, okey)] = (
+                    _vindex_merge,
+                    merge_indexer[i],
+                    merge_inputs[i],
+                )
+
+        result_1d = Array(
+            HighLevelGraph.from_collections(out_name, dsk, dependencies=[x]),
+            out_name,
+            chunks,
+            x.dtype,
+            meta=x._meta,
         )
         return result_1d.reshape(broadcast_shape + result_1d.shape[1:])
 
-    # # output has a zero dimension, just create a new zero-shape array with the
-    # # same dtype
-    # from dask.array.wrap import empty
+    # output has a zero dimension, just create a new zero-shape array with the
+    # same dtype
+    from dask.array.wrap import empty
 
-    other_blocks = list(
-        product(
-            *[
-                list(range(len(c))) if i not in indexed_axes else [None]
-                for i, c in enumerate(x.chunks)
-            ]
-        )
-    )
-
-    # result_1d = empty(
-    #     tuple(map(sum, chunks)), chunks=chunks, dtype=x.dtype, name=out_name
-    # )
-
-
-    name = "vindex-slice-" + token
-    vindex_merge_name = "vindex-merge-" + token
-    dsk = {}
-    for okey in other_blocks:
-        for i, key in enumerate(block_idxs):
-            dsk[keyname(name, i, okey)] = (
-                _vindex_transpose,
-                (
-                    _vindex_slice,
-                    (x.name,) + interleave_none(okey, key),
-                    index_arrs,
-                    _get_block_bounds(key, bounds),
-                    indexed_axes,
-                ),
-                axis,
-            )
-        dsk[keyname(vindex_merge_name, 0, okey)] = (
-            _vindex_merge,
-            [keyname(name, i, okey) for i in range(len(block_idxs))],
-            index_arrs,
-            block_idxs,
-            bounds,
-        )
-
-    result_1d = Array(
-        HighLevelGraph.from_collections(out_name, dsk, dependencies=[x]),
-        out_name,
-        chunks,
-        x.dtype,
-        meta=x._meta,
+    result_1d = empty(
+        tuple(map(sum, chunks)), chunks=chunks, dtype=x.dtype, name=out_name
     )
     return result_1d.reshape(broadcast_shape + result_1d.shape[1:])
 
-def _get_block_bounds(block_idx, bounds):
-    """Return a list of [start_idx, stop_idx] pairs for `block_idx`"""
-    return [b[i : i + 2] for i, b in zip(block_idx, bounds)]
 
-
-def _check_block_bounds(index_arrs, block_bounds):
-    """Identify which index points are in-block
-
-    `bounds` describes the extent of the block as a list of
-    [start_idx, stop_idx] pairs for each indexed dimension.
-    """
-    in_block = np.ones(index_arrs[0].shape, "?")
-    for dim_index_arr, dim_bounds in zip(index_arrs, block_bounds):
-        in_block &= dim_index_arr >= dim_bounds[0]
-        in_block &= dim_index_arr < dim_bounds[1]
-    return in_block
-    
-# def _get_axis(indexes):
-#     """Get axis along which point-wise slicing results lie
-
-#     This is mostly a hack because I can't figure out NumPy's rule on this and
-#     can't be bothered to go reading.
-
-#     >>> _get_axis([[1, 2], None, [1, 2], None])
-#     0
-#     >>> _get_axis([None, [1, 2], [1, 2], None])
-#     1
-#     >>> _get_axis([None, None, [1, 2], [1, 2]])
-#     2
-#     """
-#     ndim = len(indexes)
-#     indexes = [slice(None, None) if i is None else [0] for i in indexes]
-#     x = np.empty((2,) * ndim)
-#     x2 = x[tuple(indexes)]
-#     return x2.shape.index(1)
-
-def _get_axis(indexed_axes):
+def _get_axis(indexes):
     """Get axis along which point-wise slicing results lie
 
-    From https://numpy.org/doc/stable/user/basics.indexing.html, when advanced
-    indexes are all applied to adjacent axes, the dimensions resulting from the
-    advanced indexing are inserted into ihe result array at the same spot as they
-    were in the initial array. Otherwise, they come first in the result array.
+    This is mostly a hack because I can't figure out NumPy's rule on this and
+    can't be bothered to go reading.
 
-    >>> _get_axis([0, 2])
+    >>> _get_axis([[1, 2], None, [1, 2], None])
     0
-    >>> _get_axis([1, 2])
+    >>> _get_axis([None, [1, 2], [1, 2], None])
     1
-    >>> _get_axis([2, 3])
+    >>> _get_axis([None, None, [1, 2], [1, 2]])
     2
     """
-    if indexed_axes[-1] - indexed_axes[0] == len(indexed_axes) - 1:
-        return indexed_axes[0]
-    else:
-        return 0
-
-# def _vindex_slice(block, points):
-#     """Pull out point-wise slices from block"""
-#     points = [p if isinstance(p, slice) else list(p) for p in points]
-#     return block[tuple(points)]
+    ndim = len(indexes)
+    indexes = [slice(None, None) if i is None else [0] for i in indexes]
+    x = np.empty((2,) * ndim)
+    x2 = x[tuple(indexes)]
+    return x2.shape.index(1)
 
 
-def _vindex_slice(block, index_arrs, block_bounds, indexed_axes):
+def _vindex_slice(block, points):
     """Pull out point-wise slices from block"""
-    in_block = _check_block_bounds(index_arrs, block_bounds)
-    block_index_arr = [
-        dim_index_arr[in_block] - dim_bounds[0]
-        for dim_index_arr, dim_bounds in zip(index_arrs, block_bounds)
-    ]
-    block_index_arr = tuple(
-        block_index_arr.pop(0) if i in indexed_axes else slice(None)
-        for i in range(block.ndim)
-    )
-    return block[block_index_arr]
+    points = [p if isinstance(p, slice) else list(p) for p in points]
+    return block[tuple(points)]
 
 
 def _vindex_transpose(block, axis):
@@ -6094,47 +5791,38 @@ def _vindex_transpose(block, axis):
     return block.transpose(axes)
 
 
-# def _vindex_merge(locations, values):
-#     """
+def _vindex_merge(locations, values):
+    """
 
-#     >>> locations = [0], [2, 1]
-#     >>> values = [np.array([[1, 2, 3]]),
-#     ...           np.array([[10, 20, 30], [40, 50, 60]])]
+    >>> locations = [0], [2, 1]
+    >>> values = [np.array([[1, 2, 3]]),
+    ...           np.array([[10, 20, 30], [40, 50, 60]])]
 
-#     >>> _vindex_merge(locations, values)
-#     array([[ 1,  2,  3],
-#            [40, 50, 60],
-#            [10, 20, 30]])
-#     """
-#     locations = list(map(list, locations))
-#     values = list(values)
+    >>> _vindex_merge(locations, values)
+    array([[ 1,  2,  3],
+           [40, 50, 60],
+           [10, 20, 30]])
+    """
+    locations = list(map(list, locations))
+    values = list(values)
 
-#     n = sum(map(len, locations))
+    n = sum(map(len, locations))
 
-#     shape = list(values[0].shape)
-#     shape[0] = n
-#     shape = tuple(shape)
+    shape = list(values[0].shape)
+    shape[0] = n
+    shape = tuple(shape)
 
-#     dtype = values[0].dtype
+    dtype = values[0].dtype
 
-#     x = np.empty_like(values[0], dtype=dtype, shape=shape)
+    x = np.empty_like(values[0], dtype=dtype, shape=shape)
 
-#     ind = [slice(None, None) for i in range(x.ndim)]
-#     for loc, val in zip(locations, values):
-#         ind[0] = loc
-#         x[tuple(ind)] = val
+    ind = [slice(None, None) for i in range(x.ndim)]
+    for loc, val in zip(locations, values):
+        ind[0] = loc
+        x[tuple(ind)] = val
 
-#     return x
-
-
-def _vindex_merge(sliced_arrs, index_arrs, block_idxs, bounds):
-    x = np.empty_like(
-        sliced_arrs[0], shape=(index_arrs[0].shape + sliced_arrs[0].shape[1:])
-    )
-    for sliced_arr, block_idx in zip(sliced_arrs, block_idxs):
-        in_block = _check_block_bounds(index_arrs, _get_block_bounds(block_idx, bounds))
-        x[in_block] = sliced_arr
     return x
+
 
 def to_npy_stack(dirname, x, axis=0):
     """Write dask array to a stack of .npy files
